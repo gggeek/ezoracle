@@ -19,10 +19,11 @@ $script = eZScript::instance( array(
 );
 $script->startup();
 $options = $script->getOptions(
-    "[f|force]", //"[f|force][r|reverse]",
+    "[f|force][l|list]", //"[f|force][r|reverse]",
     "",
     array(
         'force' => 'Forces conversion of columns even when their data is longer than 4000 chars',
+        'list' => 'Lists CLOB/LONGTEXT with their data length and migrabilit status'
         /*'reverse' => 'Moves converted varchar2 columns back to clob'*/ )
 );
 $script->initialize();
@@ -34,7 +35,10 @@ $dbSchema = eZDbSchema::instance( $db );
 $liveSchema = $dbSchema->schema( array( 'format' => 'local' ) );
 $dbName = $db->databaseName();
 
-$cli->output( 'Converting CLOB/LONGTEXT cols to VARCHAR(4000)' );
+if ( $options['list'] )
+    $cli->output( 'Retrieving CLOB/LONGTEXT lengths' . ( $dbName == 'oracle' ? '(in characters)' : '' ) );
+else
+    $cli->output( 'Converting CLOB/LONGTEXT cols to VARCHAR(4000)' );
 
 // for every blob/longtext col, get the max length of data stored
 // NB: for Oracle, results are in chars, NOT in bytes! This means a 4000 chars blob would not fit in a 4000 bytes varchar2...
@@ -47,23 +51,30 @@ foreach( $liveSchema as $tableName => $tableDef )
             if ( $colDef['type'] == 'longtext' )
             {
                 $max = getMaxColLength( $tableName, $colName, $db );
-                if ( $max <= 4000 || $options['force'] )
+                if ( $options['list'] )
                 {
-                    $ok = alterBlobColToVarchar( $tableName, $colName, $colDef, $db );
-                    if ( $ok === true )
-                    {
-                        $cli->output( str_pad( "$tableName.$colName:", 62 ) . 'migrated' );
-                    }
-                    else
-                    {
-                        $cli->output( str_pad( "$tableName.$colName:", 62 ) . 'NOT migrated: ' . $ok );
-                    }
+                    $cli->output( str_pad( "$tableName.$colName:", 62 ) . $max . ( $max <= 4000 ? ' - can be migrated' : ' - can NOT be migrated' ) );
                 }
                 else
                 {
-                    if ( $max > 4000 )
+                    if ( $max <= 4000 || $options['force'] )
                     {
-                        $cli->output( str_pad( "$tableName.$colName:", 62 ) . "NOT migrated: data too long ($max chars)" );
+                        $ok = alterBlobColToVarchar( $tableName, $colName, $colDef, $db );
+                        if ( $ok === true )
+                        {
+                            $cli->output( str_pad( "$tableName.$colName:", 62 ) . 'migrated' );
+                        }
+                        else
+                        {
+                            $cli->output( str_pad( "$tableName.$colName:", 62 ) . 'NOT migrated: ' . $ok );
+                        }
+                    }
+                    else
+                    {
+                        if ( $max > 4000 )
+                        {
+                            $cli->output( str_pad( "$tableName.$colName:", 62 ) . "NOT migrated: data too long ($max chars)" );
+                        }
                     }
                 }
             }
@@ -109,19 +120,20 @@ function alterBlobColToVarchar( $tableName, $colName, $colDef, $db )
         case 'mysql':
         case 'mysqli':
             /// @todo...
-            $newColDef = "VARCHAR2(4000)";
+            $newColDef = "VARCHAR(4000)";
             if ( @$colDef['not_null'] )
             {
                 $newColDef .= ' NOT NULL';
             }
             // improbable: according to http://dev.mysql.com/doc/refman/5.5/en/blob.html
             // TEXT cols can not have default on mysql
-            if ( @$colDef['default'] !== null && @$colDef['default'] !== '' )
+            if ( @$colDef['default'] !== null && @$colDef['default'] !== ''  && @$colDef['default'] !== false )
             {
                 $newColDef .= " DEFAULT '" . str_replace( "'", "\'", $colDef['default'] ) . "'";
             }
             if ( ! $db->query( "ALTER TABLE $tableName MODIFY $colName $newColDef" ) )
             {
+                var_dump( "ALTER TABLE $tableName MODIFY $colName $newColDef" );
                 return "could not alter col";
             }
             return true;

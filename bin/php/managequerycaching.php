@@ -6,6 +6,7 @@
  *
  * @todo allow user to specify a list of tables not to operate on
  * @todo faster operation: do a select on USER_TABLES instead of uding ezdbschema
+ * @todo check for correct db version before executing
  */
 
 require 'autoload.php';

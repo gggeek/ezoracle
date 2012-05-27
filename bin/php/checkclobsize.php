@@ -2,6 +2,8 @@
 <?php
 /**
  * Script to query max length of data in CLOB/LONGTEXT fields in the db
+ *
+ * @todo add cli switch to only list cols wider than 4000 chars
  */
 
 require 'autoload.php';
@@ -15,9 +17,9 @@ $script = eZScript::instance( array(
 );
 $script->startup();
 $options = $script->getOptions(
-    "[a]",
+    "[a|all]",
     "",
-    array( 'a' => 'List all tables with CLOB/LONGTEXT fields, not only the ones with data in them' )
+    array( 'all' => 'List all tables with CLOB/LONGTEXT fields, not only the ones with data in them' )
 );
 $script->initialize();
 
@@ -28,10 +30,10 @@ $dbSchema = eZDbSchema::instance( $db );
 $liveSchema = $dbSchema->schema( array( 'format' => 'local' ) );
 $dbName = $db->databaseName();
 
-$cli->output( 'Retrieving CLOB/LONGTEXT lengths' . ( $dbName == 'oracle' ? '(in characters)' : '' ) . ( $options['a'] ? ' of all columns' : '' ) );
+$cli->output( 'Retrieving CLOB/LONGTEXT lengths' . ( $dbName == 'oracle' ? '(in characters)' : '' ) . ( $options['all'] ? ' of all columns' : '' ) );
 
 // for every blob col, get the max length of data stored
-// NB: results are in chars, NOT in bytes! This means a 4000 chars blob would not fit in a 4000 bytes varchar2
+// NB: for oracle, results are in chars, NOT in bytes! This means a 4000 chars blob would not fit in a 4000 bytes varchar2
 foreach( $liveSchema as $tableName => $tableDef )
 {
     if ( isset( $tableDef['fields'] ) )
@@ -41,7 +43,7 @@ foreach( $liveSchema as $tableName => $tableDef )
             if ( $colDef['type'] == 'longtext' )
             {
                 $max = getMaxColLength( $tableName, $colName, $db );
-                if ( $options['a'] || $max )
+                if ( $options['all'] || $max )
                 {
                     $cli->output( str_pad( "$tableName.$colName:", 62 ) . $max );
                 }
